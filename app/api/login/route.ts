@@ -1,32 +1,40 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { createSession } from "@/lib/auth";
 
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
 
-    // Basic validation
     if (!email || !password) {
       return NextResponse.json(
-        { message: "Email and password are required." },
-        { status: 400 }
+        {
+          message: "Email and password are required.",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    // Find user by email
     const user = await db.orm.public.User
-      .where({ email: email.trim() })
+      .where({
+        email: email.trim(),
+      })
       .first();
 
     if (!user) {
       return NextResponse.json(
-        { message: "Invalid email or password." },
-        { status: 401 }
+        {
+          message: "Invalid email or password.",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
-    // Compare entered password with hashed password
     const passwordMatch = await bcrypt.compare(
       password,
       user.password
@@ -34,13 +42,23 @@ export async function POST(request: Request) {
 
     if (!passwordMatch) {
       return NextResponse.json(
-        { message: "Invalid email or password." },
-        { status: 401 }
+        {
+          message: "Invalid email or password.",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
-    // Never send password to browser
-    return NextResponse.json(
+    const sessionToken = await createSession({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      mobile: user.mobile,
+    });
+
+    const response = NextResponse.json(
       {
         message: "Login successful.",
         user: {
@@ -50,14 +68,30 @@ export async function POST(request: Request) {
           mobile: user.mobile,
         },
       },
-      { status: 200 }
+      {
+        status: 200,
+      }
     );
+
+    response.cookies.set("shoply_session", sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return response;
   } catch (error) {
     console.error("Login error:", error);
 
     return NextResponse.json(
-      { message: "Something went wrong." },
-      { status: 500 }
+      {
+        message: "Something went wrong.",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
